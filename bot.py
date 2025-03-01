@@ -1,34 +1,40 @@
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton,InlineQueryResultArticle,InputTextMessageContent, ReplyKeyboardMarkup, KeyboardButton
 import google.generativeai as genai
-import csv,re,time,os,telebot,test
+import csv,re,time,os,telebot,keys
 from pytubefix import YouTube
 
 global file,chat,msg,userlist,historyuser
 
-token,api=test.test()
+token,api=keys.test()
 print(token)
 print(api)
 bot=telebot.TeleBot(token)
 genai.configure(api_key=api)
 
-model = genai.GenerativeModel("gemini-2.0-pro-exp")
+model = genai.GenerativeModel("gemini-2.0-flash")
 userid=[]
 may=sb=False
 
 def dd(message,chat):
-    sb=False
-    p1=r'url=([^\s]+)'
-    p2=r'text=([^\s]+)'
-    r=re.search(p1,message.text)
-    t=re.search(p2,message.text)
-    url,text=(r.group(1)), (t.group(1))
-    yt = YouTube(url)
-    stream = yt.streams.get_lowest_resolution()
-    filepaz=stream.download(output_path="trash/")
-    filepaz=filepaz.replace('\\','/')
-    file_url=genai.upload_file(filepaz)
-    response=chat.send_message([file_url,text])
-    return response
+    try:
+        sb=False
+        p1=r'url=([^\s]+)'
+        p2=r'text=([^\s]+)'
+        r=re.search(p1,message.text)
+        t=re.search(p2,message.text)
+        url,text=(r.group(1)), (t.group(1))
+        yt = YouTube(url)
+        stream = yt.streams.get_lowest_resolution()
+        filepaz=stream.download(output_path="trash/")
+        filepaz=filepaz.replace('\\','/')
+        with open(f'{filepaz}','rb') as f:
+            tr=f.read()
+        file_url=genai.upload_file(filepaz)
+        
+        response=chat.send_message([file_url,text])
+        return response
+    except Exception as e:
+        print(f'dd error:{e}')
 
 
 def history(file):
@@ -86,10 +92,10 @@ def loads(message):
         prompt=None
     if prompt:
         print("Промт обнаружен")
-        model = genai.GenerativeModel("gemini-2.0-pro-exp",system_instruction=prompt)
+        model = genai.GenerativeModel("gemini-2.0-flash",system_instruction=prompt)
     else:
         print("Промт не обнаружен")
-        model = genai.GenerativeModel("gemini-2.0-pro-exp")
+        model = genai.GenerativeModel("gemini-2.0-flash")
     histor=history(message.from_user.id)
     if histor!=' ':
         print("История обнаружена")
@@ -149,11 +155,18 @@ def start(message):
     else:
         w(message)
         bot.reply_to(message,"Hello I'm gemini ai bot")
-@bot.message_handler(commands=["YTwatch"])
+@bot.message_handler(commands=["ytwatch"])
 def watch(message):
     global sb
     sb=True
-    bot.send_message(message.chat.id,"Отправьте ссылку\nSend the link")
+    sendtext='''
+Отправьте ссылку на видео/Send video link
+Пример:
+Excample:
+url=Video link
+text=Запрос к gemini/request to gemini
+'''
+    bot.send_message(message.chat.id,sendtext)
 @bot.message_handler(commands=["prompt"])
 def promt(message):
     global may
@@ -166,8 +179,6 @@ def promt(message):
         else:
             bot.send_message(message.chat.id,"Промпт отсутствует\nPrompt is emty")
     bot.send_message(message.chat.id,"Введите новый промпт\nSend new prompt")
-
-
 
 @bot.message_handler(commands=["clear"])
 def clear(message):
@@ -236,9 +247,28 @@ try:
     @bot.message_handler(content_types=["text"])
     def text(message):
         global may,sb
-        print(sb)
+        def sendtext(message,response): 
+            response=format(response.text).strip('"').strip('\n')
+            while response[-1]=='\n' or response[-1]=='"':
+                    response=response.strip('"').strip('\n')
+            response=re.sub(r"^\s*\*", r"•", response, flags=re.MULTILINE)
+            if len(response)>4096:
+                i=0
+                k=4096
+                for i in range(len(response)//4096):
+                    txt=response[i:k]
+                    while txt[-1]!='.':
+                        k-=1
+                        txt=response[i:k]
+                    bot.send_message(message.chat.id,txt,parse_mode="HTML")
+                    i=k
+                bot.send_message(message.chat.id,response[i:],parse_mode="HTML")
+            else:
+                bot.reply_to(message,response,parse_mode="HTML")
+        
         model,chat=loads(message)
         bot.send_chat_action(message.chat.id, "typing")
+
         if may:
             with open(f"Prompts/{message.from_user.id}.txt","r",encoding="UTF-8") as f:
                 prompt=f.read().strip()
@@ -246,7 +276,6 @@ try:
                     bol=True
                 else:
                     bol=False
-
             with open(f"Prompts/{message.from_user.id}.txt","w",encoding="UTF-8") as f:
                 f.write(message.text)
             may=False
@@ -254,83 +283,49 @@ try:
                 bot.send_message(message.chat.id,"Промпт успешно обнавлен\nPrompt refresh succes")
             else:
                 bot.send_message(message.chat.id,"Промпт успешно добавлен\nPrompt add succes")
-
             return
-        
-        if sb:
-            response=dd(message=message,chat=chat)
-
-        
-
         w(message)
-
         try:
-            question=message.text
-            try:
-                response = chat.send_message(question)
-            except:
-                chat=model.start_chat()
-                response = chat.send_message(question)
-            print(message.text)
-            resp=response.text
-            response=format(response.text).strip('"').strip('\n')
-            while response[-1]=='\n' or response[-1]=='"':
-                    response=response.strip('"').strip('\n')
-            response=re.sub(r"^\s*\*", r"•", response, flags=re.MULTILINE)
-
-            if not resp:
-                response = chat.send_message(question)
-                resp=response.text
-                response=response.text
-                response=format(response)
-                while response[-1]=='\n' or response[-1]=='"':
-                    response=response.strip('"').strip('\n')
-                response=re.sub(r"^\s*\*", r"•", response, flags=re.MULTILINE)
-                bot.send_message(message.chat.id,response,parse_mode='HTML')
-                bot.send_message(1440683925,resp)
-
-            elif len(response)>4096:
-                cunt=4096
-                try:
-                    for i in range(0,len(response),4096):
-                        bot.send_message(message.chat.id, response[i:cunt],parse_mode='HTML')
-                        cunt+=4096
-                except Exception as e:
-                    bot.send_message(message.chat.id,response[cunt:],parse_mode="HTML")
-
+            if sb:
+                response=dd(message=message,chat=chat)
+                sendtext(message=message,response=response)
+                print(response)
+                return 
             else:
-                bot.reply_to(message,response,parse_mode="HTML")
-            print(1)
+                question=message.text
+                try:
+                    response = chat.send_message(question)
+                except:
+                    chat=model.start_chat()
+                    response = chat.send_message(question)
+                sendtext(message=message,response=response)       
         except Exception as e:
-            resp=resp.strip('"')
+            resp=response.text
+            resp=resp.strip('"')  
             resp=re.sub(r"\*\*\s*(.*?)\s*\*\*", r" \1 ", resp,flags=re.DOTALL)
             resp=re.sub(r"\*(\S.*?)\*(?!\w)", r"  \1  ", resp)
             resp=re.sub(r"^\s*\*", r"•", resp, flags=re.MULTILINE)
             resp=re.sub(r"\\n", "\n", resp,flags=re.DOTALL)
             resp = re.sub(r"^\s*```\n(.*?)\n\s*```$", r"\n\n\n \1 \n\n\n", resp, flags=re.DOTALL | re.MULTILINE)
-
-            cunt=4096
             bot.send_message(message.chat.id,f"{e}")
-            try:
-                for i in range(0,len(resp),4096):
-
-                    bot.send_message(1440683925, resp[i:cunt])
-
-                    bot.send_message(message.chat.id, resp[i:cunt])
-
-                    cunt+=4096
-            except Exception as e:
-                print(e)
-
-                bot.send_message(1440683925,resp[cunt:])
-                bot.send_message(message.chat.id,resp[cunt:])
-                bot.send_message(1440683925,f"Произошла ошибка: {e}")
-
+            if len(response)>4096:
+                i=0
+                k=4096
+                for i in range(len(response)//4096):
+                    txt=response[i:k]
+                    while txt[-1]!='.':
+                        k-=1
+                        txt=response[i:k]
+                    bot.send_message(message.chat.id,txt)
+                    i=k
+                bot.send_message(message.chat.id,response[i:])
+            else:
+                bot.reply_to(message,response)
+        
         try:
             with open("data/"+str(message.from_user.id)+".txt","w",encoding="UTF-8") as f:
                 txt=re.sub(r"\\(?!n)", "", f"{chat.history}")
                 f.write(txt)
-
         except Exception as e:
             print(f"Ошибка: {e}")
 
@@ -340,7 +335,6 @@ try:
         bot.send_chat_action(message.chat.id, "typing")
         w(message)
         model,chat=loads(message)
-
         try:
             fileid = message.photo[-1].file_id
             file_paz = bot.get_file(fileid).file_path
@@ -350,26 +344,25 @@ try:
             with open(f"trash/{filepaz}", 'wb') as f:
                 f.write(fayl)
             faylink = genai.upload_file(f"trash/{filepaz}")
-            print(faylink)
-
+            
             if message.caption:
-
                 response = chat.send_message([faylink,  message.caption])
             else:
                 response = chat.send_message([faylink,"что можешь сказать на счет фото"])
-
             response=format(response.text)
-
             if len(response)>4096:
-                cunt=4096
-                try:
-                    for i in range(0,len(response),4096):
-                        bot.reply_to(message, response[i:cunt])
-                        cunt+=4096
-                except Exception as e:
-                    bot.reply_to(message,response[cunt:])
+                i=0
+                k=4096
+                for i in range(len(response)//4096):
+                    txt=response[i:k]
+                    while txt[-1]!='.':
+                        k-=1
+                        txt=response[i:k]
+                    bot.send_message(message.chat.id,txt,parse_mode="HTML")
+                    i=k
+                bot.send_message(message.chat.id,response[i:],parse_mode="HTML")
             else:
-                bot.reply_to(message, response)
+                bot.reply_to(message,response,parse_mode="HTML")
 
         except Exception as e:
             bot.reply_to(message, f"Произошла ошибка: {e}")
@@ -408,15 +401,18 @@ try:
                 response = chat.send_message([faylink,"что можешь сказать на счет аудио"])
             response=format(response.text)
             if len(response)>4096:
-                cunt=4096
-                try:
-                    for i in range(0,len(response),4096):
-                        bot.reply_to(message, response[i:cunt])
-                        cunt+=4096
-                except Exception as e:
-                    bot.reply_to(message,response[cunt:])
+                i=0
+                k=4096
+                for i in range(len(response)//4096):
+                    txt=response[i:k]
+                    while txt[-1]!='.':
+                        k-=1
+                        txt=response[i:k]
+                    bot.send_message(message.chat.id,txt,parse_mode="HTML")
+                    i=k
+                bot.send_message(message.chat.id,response[i:],parse_mode="HTML")
             else:
-                bot.reply_to(message, response)
+                bot.reply_to(message,response,parse_mode="HTML")
 
         except Exception as e:
             bot.reply_to(message, f"Произошла ошибка: {e}")
@@ -433,33 +429,38 @@ try:
         model,chat=loads(message)
         try:
             fileid=message.document.file_id
+            print(fileid)
             filepaz=bot.get_file(fileid)
-            filepaz=filepaz.file_path
-            file=bot.download_file(filepaz)
-            filepaz=filepaz.split("/")[-1]
-            print(f'file:{file}')
+            filepaz=filepaz.file_path.split("/")[-1]
+            file=requests.get(bot.get_file_url(fileid)).content
             with open(f"trash/{filepaz}",'wb') as d:
-                d.write(file)
-            with open(f"trash/{filepaz}",'rb') as d:
-                print(d.read())
-            faylink = genai.upload_file(f"trash/{filepaz}")
+                    d.write(file)
+            if filepaz.count("doc")==1:
+                docx2pdf.convert(input_path=f"trash/{filepaz}")
+            else:            
+                with open(f"trash/{filepaz}",'wb') as d:
+                    d.write(file)
+            faylink = genai.upload_file(f"trash/{filepaz.split('.')[0]}.pdf")
             if message.caption:
                 response = chat.send_message([faylink, message.caption] )
             else:
                 response = chat.send_message([faylink,"что можешь сказать на счет файла"])
             response=response.text
-            print(response)
-            if len(response)>4096:
-                cunt=4096
-                try:
-                    for i in range(0,len(response),4096):
-                        bot.reply_to(message, response[i:cunt])
-                        cunt+=4096
-                except Exception as e:
-                    bot.reply_to(message,response[cunt:])
-            else:
-                bot.reply_to(message, response)
+            response=format(response)
 
+            if len(response)>4096:
+                i=0
+                k=4096
+                for i in range(len(response)//4096):
+                    txt=response[i:k]
+                    while txt[-1]!='.':
+                        k-=1
+                        txt=response[i:k]
+                    bot.send_message(message.chat.id,txt,parse_mode="HTML")
+                    i=k
+                bot.send_message(message.chat.id,response[i:],parse_mode="HTML")
+            else:
+                bot.reply_to(message,response,parse_mode="HTML")
 
         except Exception as e:
             bot.reply_to(message, f"Произошла ошибка: {e}")
@@ -475,18 +476,13 @@ try:
         model,chat=loads(message)
         try:
             if message.content_type=="video":
-                fileid=message.video.file_id
-                filepaz=bot.get_file(fileid)
-                filepaz=filepaz.file_path
-                file=bot.download_file(filepaz)
-                filepaz=filepaz.split("/")[-1]
+                file_link=bot.get_file_url(message.video.file_id)
+                filepaz=bot.get_file(message.video.file_id).file_path.split('/')[-1]
+                file=requests.get(file_link).content
             elif message.content_type=="video_note":
-                fileid=message.video_note.file_id
-                filepaz=bot.get_file(fileid)
-                filepaz=filepaz.file_path
-                file=bot.download_file(filepaz)
-                filepaz=filepaz.split("/")[-1]
-
+                file_link=bot.get_file_url(message.video_note.file_id)
+                filepaz=bot.get_file(message.video_note.file_id).file_path.split('/')[-1]
+                file=requests.get(file_link).content
             with open(f"trash/{filepaz}",'wb') as d:
                 d.write(file)
             faylink = genai.upload_file(f"trash/{filepaz}" )
@@ -498,28 +494,29 @@ try:
                 response = chat.send_message([faylink,"посмотри"])
             response=format(response.text)
             if len(response)>4096:
-                cunt=4096
-                try:
-                    for i in range(0,len(response),4096):
-                        bot.reply_to(message, response[i:cunt])
-                        cunt+=4096
-                except Exception as e:
-                    bot.reply_to(message,response[cunt:])
+                i=0
+                k=4096
+                for i in range(len(response)//4096):
+                    txt=response[i:k]
+                    while txt[-1]!='.':
+                        k-=1
+                        txt=response[i:k]
+                    bot.send_message(message.chat.id,txt,parse_mode="HTML")
+                    i=k
+                bot.send_message(message.chat.id,response[i:],parse_mode="HTML")
             else:
-                bot.reply_to(message, response)
-                #print(response.text)
-
+                bot.reply_to(message,response,parse_mode="HTML")
+                
         except Exception as e:
-            print(e)
-            bot.reply_to(message, "Файл слишком большой отправте файл размером до 20mb")
-
+            if message.video.file_size>2000000000 or message.video_note.file_size>2000000000:
+                bot.reply_to(message, "Файл слишком большой отправте файл размером до 2 гб")
+            else:
+                bot.send_message(message.chat.id,f"error file:{e}")
         with open("data/"+str(message.from_user.id)+".txt","w",encoding="UTF-8") as f:
                 txt=re.sub(r"\\(?!n)", "", f"{chat.history}")
                 f.write(txt)
 
 except Exception as e:
     bot.send_message(1440683925,f"Произошла ошибка: {e}")
-
-
 
 bot.polling(non_stop=True)
