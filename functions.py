@@ -106,7 +106,7 @@ def user():
 def image():
     from google import genai as genai2
     from google.genai import types
-    client = genai2.Client(api_key="AIzaSyAxgYtsy0jfBxMrYNTmLlvmdL-FQbx_Gw4")
+    client = genai2.Client(api_key=keys.__key__)
 
     contents = ('Hi, can you create a 3d rendered image of a pig '
                 'with wings and a top hat flying over a happy '
